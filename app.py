@@ -452,11 +452,10 @@ def process_goes_data_optimized(date_input, hour, center_coord):
 st.title("🛰️ GOES Satellite Data Viewer")
 st.markdown("### High-Resolution Infrared Satellite Imagery")
 
-st.info("⚡ **Memory Optimized**: Regional data loading preserves full resolution while reducing memory usage")
-
 st.markdown("""
-Access **GOES-16, GOES-17, GOES-18, and GOES-19** satellite data with automatic satellite selection.
-Uses smart regional loading to maintain **original image quality** while optimizing memory usage.
+Access **GOES-16, GOES-17, GOES-18, and GOES-19** satellite data with automatic satellite selection
+based on your location and date. Generate professional-quality infrared imagery from the latest 
+geostationary weather satellites.
 """)
 
 col1, col2 = st.columns([2, 3])
@@ -527,7 +526,7 @@ with col2:
                 plt.close(fig)
                 gc.collect()
                 
-                st.success(f"✅ Full resolution image generated using {satellite_used}!")
+                st.success(f"✅ Image generated successfully using {satellite_used}!")
                 st.info("💡 Right-click on the image to save it to your device.")
                 
             except Exception as e:
@@ -536,39 +535,45 @@ with col2:
             st.warning("⚠️ Please provide a valid location.")
 
 # Information section
-with st.expander("ℹ️ Memory Optimization Details"):
+with st.expander("🛰️ About GOES Satellites"):
     st.markdown("""
-    **Regional Data Loading Technology:**
+    **GOES (Geostationary Operational Environmental Satellite)** provides continuous monitoring of weather and environmental conditions.
     
-    Instead of loading entire GOES files (2GB+), this app:
-    1. **Samples coordinates** to find your region of interest
-    2. **Calculates indices** for the specific area you want to see  
-    3. **Loads only that region** from the satellite file
-    4. **Processes at full resolution** - no quality loss!
+    **Satellite Coverage:**
+    - **GOES-16** (75.2°W): April 2017 - October 2024 | Eastern US, Atlantic, South America
+    - **GOES-17** (137.0°W): August 2018 - July 2022 | Western US, Pacific
+    - **GOES-18** (137.0°W): July 2022 - Present | Western US, Pacific  
+    - **GOES-19** (75.2°W): October 2024 - Present | Eastern US, Atlantic, South America
     
-    **Result:**
-    - ✅ **Original image quality** preserved
-    - ✅ **Original rbtop3 colormap** maintained  
-    - ✅ **Memory usage** reduced by 90%+
-    - ✅ **Reliable processing** on Streamlit Cloud
+    **Features:**
+    - **Temporal Resolution**: Hourly data available
+    - **Spatial Resolution**: ~2km at satellite nadir point
+    - **Channel**: Infrared (10.3 μm) - shows cloud-top and surface temperatures
+    - **Data Source**: NOAA/NESDIS via AWS Open Data
     
-    **Coverage:** Same 20°×20° region as original, full ~2km resolution
+    The system automatically selects the best satellite based on:
+    1. **Geographic proximity** to your location
+    2. **Temporal availability** for your selected date
+    
+    Colder temperatures (blues/purples) indicate higher cloud tops or cold surfaces,
+    while warmer temperatures (reds/yellows) show lower clouds or warm surfaces.
     """)
 
-with st.expander("🛰️ Satellite Information"):
+with st.expander("🗺️ Satellite Coverage Areas"):
     st.markdown("""
-    **GOES Constellation:**
-    - **GOES-16** (75.2°W): April 2017 - October 2024 | Eastern Americas
-    - **GOES-17** (137.0°W): August 2018 - July 2022 | Western Americas  
-    - **GOES-18** (137.0°W): July 2022 - Present | Western Americas
-    - **GOES-19** (75.2°W): October 2024 - Present | Eastern Americas
+    **GOES-16 & GOES-19** (75.2°W) cover:
+    - Eastern United States and Canada
+    - Caribbean and Central America  
+    - Northern and Eastern South America
+    - Western Atlantic Ocean
     
-    **Data Quality:**
-    - **Channel**: Infrared 10.3 μm (same as original scripts)
-    - **Resolution**: ~2km at nadir (full resolution maintained)
-    - **Temporal**: Hourly data availability
-    - **Processing**: Identical to original working Discord bot scripts
+    **GOES-17 & GOES-18** (137.0°W) cover:
+    - Western United States and Canada
+    - Mexico and Central America
+    - Western South America  
+    - Eastern Pacific Ocean
+    - Hawaii and Alaska
     """)
 
 st.markdown("---")
-st.markdown("*Full-resolution processing by Sekai Chandra (@Sekai_WX)*")
+st.markdown("*Created by Sekai Chandra (@Sekai_WX)*")
