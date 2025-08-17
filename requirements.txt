@@ -1,0 +1,7 @@
+streamlit
+netCDF4
+numpy
+matplotlib
+cartopy
+requests
+geopy
