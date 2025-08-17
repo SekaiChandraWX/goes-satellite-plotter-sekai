@@ -199,11 +199,10 @@ def download_satellite_file_chunked(satellite_name, year, day_of_year, hour, pro
             os.remove(save_path)
         raise Exception(f"Download error: {str(e)}")
 
-def compute_lat_lon_efficient(ds, subsample_factor=4):
-    """Memory-efficient coordinate computation with subsampling"""
-    # Subsample to reduce memory usage
-    x = ds.variables['x'][::subsample_factor]
-    y = ds.variables['y'][::subsample_factor]
+def compute_lat_lon(ds):
+    """Compute latitude and longitude from GOES projection - using original working method"""
+    x = ds.variables['x'][:]
+    y = ds.variables['y'][:]
 
     proj_info = ds.variables['goes_imager_projection']
     lon_origin = proj_info.longitude_of_projection_origin
@@ -211,153 +210,157 @@ def compute_lat_lon_efficient(ds, subsample_factor=4):
     r_eq = proj_info.semi_major_axis
     r_pol = proj_info.semi_minor_axis
 
-    # Process in smaller chunks to avoid memory issues
-    chunk_size = 500
-    if len(x) > chunk_size:
-        x = x[:chunk_size]
-        y = y[:chunk_size]
-    
     X, Y = np.meshgrid(x, y)
-    
-    # Use float32 to save memory
-    X = X.astype(np.float32)
-    Y = Y.astype(np.float32)
 
     lambda_0 = np.deg2rad(lon_origin)
-    
-    # Vectorized computation with memory management
-    time.sleep(0.1)  # Prevent CPU spike
-    
     a_var = np.sin(X) ** 2 + (np.cos(X) ** 2 * (np.cos(Y) ** 2 + ((r_eq ** 2 / r_pol ** 2) * np.sin(Y) ** 2)))
     b_var = -2 * H * np.cos(X) * np.cos(Y)
     c_var = H ** 2 - r_eq ** 2
 
-    discriminant = np.maximum(b_var ** 2 - 4 * a_var * c_var, 0)
-    
+    discriminant = b_var ** 2 - 4 * a_var * c_var
+    discriminant = np.maximum(discriminant, 0)
+
     r_s = (-b_var - np.sqrt(discriminant)) / (2 * a_var)
     s_x = r_s * np.cos(X) * np.cos(Y)
     s_y = -r_s * np.sin(X)
     s_z = r_s * np.cos(X) * np.sin(Y)
 
     denominator = np.sqrt((H - s_x) ** 2 + s_y ** 2)
-    
-    # Avoid division by zero
-    denominator = np.where(denominator == 0, 1e-10, denominator)
+
+    if np.any(denominator == 0):
+        raise ValueError("Zero values detected in coordinate computation")
 
     lat = np.rad2deg(np.arctan((r_eq ** 2 / r_pol ** 2) * (s_z / denominator)))
     lon = np.rad2deg(lambda_0 - np.arctan(s_y / (H - s_x)))
 
-    return lat.astype(np.float32), lon.astype(np.float32)
-
-def rad_to_temp_efficient(radiance, planck_fk1, planck_fk2, planck_bc1, planck_bc2):
-    """Memory-efficient temperature conversion"""
-    # Avoid log(0) and use float32
-    radiance = np.maximum(radiance, 1e-10)
-    brightness_temp = (planck_fk2 / (np.log((planck_fk1 / radiance) + 1)) - planck_bc1) / planck_bc2
-    return (brightness_temp - 273.15).astype(np.float32)
+    return lat, lon
 
 def plot_goes_data_optimized(file_path, filename, center_coord, progress_bar=None):
-    """Optimized plotting with reduced memory usage"""
+    """Optimized plotting using original working method for coverage detection"""
     
     if progress_bar:
         progress_bar.progress(80, "Processing satellite data...")
     
+    def rad_to_temp(radiance, planck_fk1, planck_fk2, planck_bc1, planck_bc2):
+        """Convert radiance to brightness temperature - original method"""
+        brightness_temp = (planck_fk2 / (np.log((planck_fk1 / radiance) + 1)) - planck_bc1) / planck_bc2
+        return brightness_temp - 273.15  # Convert from Kelvin to Celsius
+    
     with nc.Dataset(file_path) as ds:
-        # Subsample data to reduce memory load
-        subsample = 4  # Use every 4th pixel
-        data = ds.variables['Rad'][::subsample, ::subsample].squeeze()
+        # Use original method: load full data first
+        data = ds.variables['Rad'][:].squeeze()
+        lats, lons = compute_lat_lon(ds)  # Full coordinate grid
         
-        time.sleep(0.5)  # Prevent CPU overload
-        
-        lats, lons = compute_lat_lon_efficient(ds, subsample)
+        time.sleep(0.2)  # Brief pause for CPU
         
         # Get calibration coefficients
-        planck_fk1 = float(ds.variables['planck_fk1'][0])
-        planck_fk2 = float(ds.variables['planck_fk2'][0])
-        planck_bc1 = float(ds.variables['planck_bc1'][0])
-        planck_bc2 = float(ds.variables['planck_bc2'][0])
+        planck_fk1 = ds.variables['planck_fk1'][0]
+        planck_fk2 = ds.variables['planck_fk2'][0]
+        planck_bc1 = ds.variables['planck_bc1'][0]
+        planck_bc2 = ds.variables['planck_bc2'][0]
 
-        # Convert to temperature efficiently
-        data_temp = rad_to_temp_efficient(data, planck_fk1, planck_fk2, planck_bc1, planck_bc2)
+        # Convert to temperature using original method
+        data_temp_celsius = rad_to_temp(data, planck_fk1, planck_fk2, planck_bc1, planck_bc2)
         
-        # Clear unused variables
+        # Clear original data to save memory
         del data
+        gc.collect()
+        
+        if progress_bar:
+            progress_bar.progress(85, "Checking location coverage...")
+        
+        # Use original coverage detection method
+        center_lon, center_lat = center_coord
+        lon_min, lon_max = center_lon - 10, center_lon + 10
+        lat_min, lat_max = center_lat - 10, center_lat + 10
+
+        # Ensure lons and lats are 2D - original method
+        if lons.ndim == 1:
+            lons, _ = np.meshgrid(lons, lats)
+        if lats.ndim == 1:
+            _, lats = np.meshgrid(lons, lats)
+
+        # Original masking logic
+        lon_mask = (lons >= lon_min) & (lons <= lon_max)
+        lat_mask = (lats >= lat_min) & (lats <= lat_max)
+        mask = lon_mask & lat_mask
+
+        # Original coverage check
+        if not np.any(mask):
+            raise Exception("This location is not covered by this satellite! Please check pinned messages for location specifics!")
+
+        # Original masking application
+        data_box = np.ma.masked_where(~mask, data_temp_celsius)
+        lons_box = np.ma.masked_where(~mask, lons)
+        lats_box = np.ma.masked_where(~mask, lats)
+        
+        # Clear full arrays to save memory
+        del data_temp_celsius, lons, lats, mask, lon_mask, lat_mask
         gc.collect()
         
         if progress_bar:
             progress_bar.progress(90, "Creating visualization...")
         
-        # Define smaller region to reduce processing
-        center_lon, center_lat = center_coord
-        region_size = 8  # Reduced from 10 degrees
-        lon_min, lon_max = center_lon - region_size, center_lon + region_size
-        lat_min, lat_max = center_lat - region_size, center_lat + region_size
+        time.sleep(0.3)  # CPU break
 
-        # Ensure 2D coordinates with memory efficiency
-        if lons.ndim == 1:
-            lons_grid, lats_grid = np.meshgrid(lons, lats)
-        else:
-            lons_grid, lats_grid = lons, lats
+        # NOW apply subsampling to the extracted region for plotting optimization
+        subsample = 3  # Reduced subsampling for better quality
+        data_plot = data_box[::subsample, ::subsample]
+        lons_plot = lons_box[::subsample, ::subsample]
+        lats_plot = lats_box[::subsample, ::subsample]
         
-        # Create masks efficiently
-        mask = ((lons_grid >= lon_min) & (lons_grid <= lon_max) & 
-                (lats_grid >= lat_min) & (lats_grid <= lat_max))
-
-        if not np.any(mask):
-            raise Exception("Location not covered by satellite!")
-
-        # Apply masks with memory management
-        data_masked = np.ma.masked_where(~mask, data_temp)
-        lons_masked = np.ma.masked_where(~mask, lons_grid)
-        lats_masked = np.ma.masked_where(~mask, lats_grid)
-        
-        # Clear intermediate variables
-        del data_temp, lons_grid, lats_grid, mask
+        # Clear intermediate arrays
+        del data_box, lons_box, lats_box
         gc.collect()
-        
-        time.sleep(0.5)  # CPU break
 
-        # Create optimized plot
+        # Create plot - using original settings but optimized figure size
         custom_cmap = rbtop3()
-        
-        # Reduced figure size and DPI for memory efficiency
-        fig, ax = plt.subplots(figsize=(12, 8), dpi=100, 
+        fig, ax = plt.subplots(figsize=(16, 10), dpi=150, 
                               subplot_kw={'projection': ccrs.PlateCarree()})
 
         vmin, vmax = -100, 40
         
-        # Use reduced shading for performance
-        im = ax.pcolormesh(lons_masked, lats_masked, data_masked, 
-                          cmap=custom_cmap, vmin=vmin, vmax=vmax,
-                          transform=ccrs.PlateCarree(), shading='nearest')
+        # Original plotting method
+        im = ax.pcolormesh(lons_plot, lats_plot, data_plot, cmap=custom_cmap, vmin=vmin, vmax=vmax,
+                          transform=ccrs.PlateCarree(), shading='auto')
 
         ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
+        ax.set_xlim(lon_min, lon_max)
+        ax.set_ylim(lat_min, lat_max)
 
-        # Add essential features only
-        ax.coastlines(resolution='50m')  # Lower resolution
-        ax.add_feature(cfeature.LAND, edgecolor='black', alpha=0.5)
-        ax.add_feature(cfeature.BORDERS, linestyle=':', alpha=0.7)
+        # Add map features - original method
+        ax.coastlines()
+        ax.add_feature(cfeature.LAND, edgecolor='black')
+        ax.add_feature(cfeature.BORDERS, linestyle=':')
+        ax.add_feature(cfeature.STATES, linestyle=':')
 
-        # Simplified colorbar
-        plt.colorbar(im, ax=ax, orientation='vertical', label='Temperature (°C)', 
-                    shrink=0.8, pad=0.02)
+        # Original colorbar
+        plt.colorbar(im, ax=ax, orientation='vertical', label='Temperature (°C)')
 
-        # Title from filename
+        # Original title generation
         date_time_str = filename.split('_')[3][1:12]
         dt = datetime.strptime(date_time_str, '%Y%j%H%M')
         
-        sat_name = 'GOES-16' if 'G16' in filename else \
-                  'GOES-17' if 'G17' in filename else \
-                  'GOES-18' if 'G18' in filename else \
-                  'GOES-19' if 'G19' in filename else 'GOES'
+        # Determine satellite from filename
+        if 'G16' in filename:
+            sat_name = 'GOES-16'
+        elif 'G17' in filename:
+            sat_name = 'GOES-17'
+        elif 'G18' in filename:
+            sat_name = 'GOES-18'
+        elif 'G19' in filename:
+            sat_name = 'GOES-19'
+        else:
+            sat_name = 'GOES'
             
-        title = dt.strftime(f'{sat_name} IR Data - %b %d, %Y %H:%M UTC')
-        plt.title(title, fontsize=14, weight='bold', pad=8)
+        title = dt.strftime(f'{sat_name} Infrared Data for %B %d, %Y at %H:%M UTC')
+        plt.title(title, fontsize=18, weight='bold', pad=10)
 
-        fig.text(0.5, 0.02, 'Sekai Chandra (@Sekai_WX)', ha='center', fontsize=10, weight='bold')
+        # Original attribution
+        fig.text(0.5, 0.085, 'Plotted by Sekai Chandra (@Sekai_WX)', ha='center', fontsize=15, weight='bold')
 
         # Clean up memory
-        del data_masked, lons_masked, lats_masked
+        del data_plot, lons_plot, lats_plot
         gc.collect()
 
         return fig
